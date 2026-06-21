@@ -1,0 +1,8 @@
+﻿.venv/
+chroma_db/
+uploads/
+__pycache__/
+*.pyc
+.env
+uv.lock
+.idea/
