@@ -4,7 +4,7 @@ from langchain_core.documents import Document
 from loguru import logger
 from app.config import config
 from app.services.embedding_service import embedding_service
-
+import chromadb
 
 class VectorStoreService:
     """ChromaDB 向量存储管理"""
@@ -13,13 +13,33 @@ class VectorStoreService:
         self._store: Optional[Chroma] = None
 
     def initialize(self) -> Chroma:
-        """初始化向量存储（app lifespan 中调用）"""
-        self._store = Chroma(
-            collection_name=config.chroma_collection_name,
-            embedding_function=embedding_service,
-            persist_directory=config.chroma_persist_dir,
-        )
-        logger.info(f"ChromaDB 就绪: collection={config.chroma_collection_name}")
+        """初始化向量存储"""
+        if config.chroma_host:
+            # Docker 模式：连接独立的 ChromaDB 容器
+            client = chromadb.HttpClient(
+                host=config.chroma_host,
+                port=config.chroma_port,
+            )
+            self._store = Chroma(
+                client=client,
+                collection_name=config.chroma_collection_name,
+                embedding_function=embedding_service,
+            )
+            logger.info(
+                f"ChromaDB 就绪 (HTTP): {config.chroma_host}:{config.chroma_port}, "
+                f"collection={config.chroma_collection_name}"
+            )
+        else:
+            # 本地模式：内嵌 PersistentClient
+            self._store = Chroma(
+                collection_name=config.chroma_collection_name,
+                embedding_function=embedding_service,
+                persist_directory=config.chroma_persist_dir,
+            )
+            logger.info(
+                f"ChromaDB 就绪 (本地): {config.chroma_persist_dir}, "
+                f"collection={config.chroma_collection_name}"
+            )
         return self._store
 
     @property

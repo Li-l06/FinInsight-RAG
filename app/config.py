@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -27,5 +28,8 @@ class Settings(BaseSettings):
     chroma_persist_dir: str = "./chroma_db"
     chroma_collection_name: str = "fininsight_knowledge"
 
+
+chroma_host: str = ""  # 新增：Docker 模式时设为 chromadb
+chroma_port: int = 8000  # 新增：Docker 模式时 ChromaDB 端口
 
 config = Settings()

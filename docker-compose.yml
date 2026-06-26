@@ -1,0 +1,25 @@
+version: "3.8"
+
+services:
+  chromadb:
+    image: chromadb/chroma:latest
+    volumes:
+      - ./chroma_db:/chroma/chroma
+    ports:
+      - "8001:8000"
+    restart: unless-stopped
+
+  app:
+    build: .
+    ports:
+      - "9900:9900"
+    env_file:
+      - .env
+    environment:
+      - CHROMA_HOST=chromadb
+      - CHROMA_PORT=8000
+    volumes:
+      - ./uploads:/app/uploads
+    depends_on:
+      - chromadb
+    restart: unless-stopped
