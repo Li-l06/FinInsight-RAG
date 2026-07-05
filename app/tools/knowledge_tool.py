@@ -2,8 +2,9 @@ from typing import Tuple, List
 from langchain_core.documents import Document
 from langchain_core.tools import tool
 from loguru import logger
-from app.config import config
+
 from app.services.search_service import search_service
+from app.config import config as _config
 
 
 @tool(response_format="content_and_artifact")
@@ -20,7 +21,8 @@ def retrieve_knowledge(query: str) -> Tuple[str, List[Document]]:
     """
     try:
         logger.info(f"知识检索: '{query}'")
-        docs = search_service.search(query, top_k=config.rag_top_k)
+
+        docs = search_service.search(query, top_k=_config.rag_top_k)
 
         if not docs:
             return "未找到相关信息。", []

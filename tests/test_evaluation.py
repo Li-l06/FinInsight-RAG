@@ -4,9 +4,9 @@
 用法：准备好测试集后，直接 python tests/test_evaluation.py
 """
 
-import json
+
 import asyncio
-from pathlib import Path
+from app.config import config as cfg
 from app.services.search_service import search_service
 from app.services.vector_store_service import vector_store_service
 from app.services.rag_agent_service import rag_agent_service
@@ -24,31 +24,36 @@ TEST_QUERIES = [
 
 
 async def evaluate_retrieval(k: int = 5):
-    """检索指标：Recall@K、MRR"""
-    recall_sum = 0.0
-    mrr_sum = 0.0
-    total = len(TEST_QUERIES)
+    """检索指标对比：三组实验"""
+    from app.services.reranker_service import reranker_service
 
-    for item in TEST_QUERIES:
-        docs = search_service.search(item["query"], top_k=k)
-        retrieved_files = [d.metadata.get("file_name", "") for d in docs]
+    print(f"\n{'='*60}")
+    print(f"检索评估对比 (Top-{k})")
+    print(f"{'='*60}")
 
-        # Recall@K: 命中了几个相关文档 / 总相关文档数
-        hits = sum(1 for f in retrieved_files if f in item["relevant_docs"])
-        recall = hits / len(item["relevant_docs"]) if item["relevant_docs"] else 0
-        recall_sum += recall
+    for mode_name, use_rerank in [("Dense+BM25", False), ("Dense+BM25+Reranker", True)]:
+        cfg.enable_rerank = use_rerank
+        recall_sum = 0.0
+        mrr_sum = 0.0
+        total = len(TEST_QUERIES)
 
-        # MRR: 1 / 第一个相关文档的排名
-        for rank, f in enumerate(retrieved_files, 1):
-            if f in item["relevant_docs"]:
-                mrr_sum += 1 / rank
-                break
+        for item in TEST_QUERIES:
+            docs = search_service.search(item["query"], top_k=k)
+            retrieved_files = [d.metadata.get("file_name", "") for d in docs]
 
-    print(f"\n=== 检索评估 (Top-{k}) ===")
-    print(f"测试查询数: {total}")
-    print(f"Recall@{k}: {recall_sum / total:.2%}")
-    print(f"MRR: {mrr_sum / total:.4f}")
-    print(f"========================\n")
+            hits = sum(1 for f in retrieved_files if f in item["relevant_docs"])
+            recall_sum += hits / len(item["relevant_docs"]) if item["relevant_docs"] else 0
+
+            for rank, f in enumerate(retrieved_files, 1):
+                if f in item["relevant_docs"]:
+                    mrr_sum += 1 / rank
+                    break
+
+        print(f"\n{mode_name}:")
+        print(f"  Recall@{k}: {recall_sum/total:.2%}")
+        print(f"  MRR: {mrr_sum/total:.4f}")
+
+    cfg.enable_rerank = True  # 恢复默认
 
 
 async def evaluate_generation():

@@ -24,6 +24,14 @@ class Settings(BaseSettings):
     chunk_overlap: int = 100
     rag_top_k: int = 5
 
+    # Reranker
+    enable_rerank: bool = True
+    rerank_model: str = "gte-rerank"
+    rerank_top_n: int = 3
+
+    # 查询改写
+    enable_query_rewrite: bool = True
+
     # ChromaDB
     chroma_persist_dir: str = "./chroma_db"
     chroma_collection_name: str = "fininsight_knowledge"

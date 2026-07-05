@@ -46,19 +46,35 @@ class SearchService:
         logger.info(f"BM25 索引构建完成: {len(self._bm25_docs)} 个文档块")
 
     def search(self, query: str, top_k: int = 5) -> List[Document]:
-        """
-        多路召回 + RRF 融合 → Top-K 结果
-        """
-        # 路1：Dense
-        dense_results = self._dense_search(query, top_k=15)
+        """多路召回 + 查询改写 + RRF 融合 + Reranker 精排"""
+        from app.services.query_rewriter_service import query_rewriter_service
+        from app.services.keyword_validator import validate_rewrite
+        from app.services.reranker_service import reranker_service
 
-        # 路2：Sparse (BM25)
-        sparse_results = self._sparse_search(query, top_k=15)
+        # 收集所有召回路
+        all_docs: List[Document] = []
+        queries = [query]  # 原始 query 始终参与
 
-        # RRF 融合
-        merged = self._rrf_fusion(dense_results, sparse_results, k=60)
+        # 查询改写（双路融合策略：原始 + 改写各自召回，RRF 合并）
+        if config.enable_query_rewrite:
+            rewritten = query_rewriter_service.rewrite(query)
+            if rewritten and rewritten != query and validate_rewrite(query, rewritten):
+                queries.append(rewritten)
 
-        # 取 Top-K
+        # 每条 query 独立召回
+        for q in queries:
+            dense = self._dense_search(q, top_k=20)
+            sparse = self._sparse_search(q, top_k=20)
+            all_docs.extend(dense)
+            all_docs.extend(sparse)
+
+        # RRF 融合去重
+        merged = self._rrf_fusion_all(all_docs, k=60)
+
+        # Reranker 精排
+        if config.enable_rerank:
+            merged = reranker_service.rerank(query, merged, top_n=config.rerank_top_n)
+
         return merged[:top_k]
 
     def _dense_search(self, query: str, top_k: int = 15) -> List[Document]:
@@ -90,6 +106,32 @@ class SearchService:
         docs = [self._bm25_docs[idx] for idx, _score in ranked if scores[idx] > 0]
         logger.debug(f"BM25 检索: {len(docs)} 结果")
         return docs
+    def _rrf_fusion_all(
+        self,
+        doc_lists: List[Document],  # type: ignore — 实际接受扁平列表，内部用 page_content 去重
+        k: int = 60,
+    ) -> List[Document]:
+        """RRF 融合多个召回结果（按 page_content 去重）"""
+        scores: dict[str, float] = {}
+        doc_map: dict[str, Document] = {}
+
+        for doc in doc_lists:
+            key = doc.page_content
+            doc_map[key] = doc
+
+        # 对每个唯一文档，按在各路中的最高排名计分
+        # 简化：按首次出现顺序赋排名
+        seen: dict[str, int] = {}
+        for doc in doc_lists:
+            key = doc.page_content
+            if key not in seen:
+                rank = len(seen) + 1
+                seen[key] = rank
+                scores[key] = scores.get(key, 0) + 1 / (k + rank)
+
+        sorted_keys = sorted(scores, key=lambda x: scores[x], reverse=True)
+        logger.info(f"RRF 融合: {len(doc_lists)} 条 → {len(sorted_keys)} 去重结果")
+        return [doc_map[k] for k in sorted_keys]
 
     def _rrf_fusion(
         self,
